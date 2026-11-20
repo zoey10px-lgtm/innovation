@@ -10,6 +10,7 @@ class Sentence:
     page: int
     quote: str
     context: str
+    document_id: str = "report"
 
 
 BREAK = re.compile(r'(?<!\b[A-Z]\.)(?<=[.!?])\s+(?=[A-Z0-9“"])')
@@ -38,7 +39,8 @@ def sentence_windows(pages):
                 continue
             before = sentences[index - 1][-300:] if index else ''
             after = sentences[index + 1][:300] if index + 1 < len(sentences) else ''
-            yield Sentence(page.number, quote, f'BEFORE: {before}\nCENTER: {quote}\nAFTER: {after}')
+            yield Sentence(page.number, quote, f'BEFORE: {before}\nCENTER: {quote}\nAFTER: {after}',
+                           getattr(page, 'document_id', 'report'))
 
 
 def shortlist(sentences, rankings, page_limit=5, sentence_limit=24):
@@ -50,9 +52,10 @@ def shortlist(sentences, rankings, page_limit=5, sentence_limit=24):
                 continue
             index, _ = hits[rank]
             sentence = sentences[index]
-            if sentence.page not in pages and len(pages) >= page_limit:
+            page_key = (sentence.document_id, sentence.page)
+            if page_key not in pages and len(pages) >= page_limit:
                 continue
-            pages.add(sentence.page)
+            pages.add(page_key)
             chosen[str(index + 1)] = sentence
             if len(chosen) == sentence_limit:
                 return chosen
@@ -61,7 +64,9 @@ def shortlist(sentences, rankings, page_limit=5, sentence_limit=24):
 
 def decode(raw, shape, default):
     try:
-        value = json.loads(raw.strip())
+        text = raw.strip()
+        fenced = re.fullmatch(r'```(?:json)?\s*(.*?)\s*```', text, flags=re.IGNORECASE | re.DOTALL)
+        value = json.loads(fenced.group(1) if fenced else text)
     except (ValueError, AttributeError):
         return default
     return value if isinstance(value, shape) else default
@@ -127,7 +132,7 @@ def assess(target, pages, criteria, retrieve, generate, verify, deadline):
     for key in decode(raw, list, []):
         if isinstance(key, str) and key in passed:
             sentence = passed[key]
-            result['evidence'][key] = dict(page=sentence.page, quote=sentence.quote)
+            result['evidence'][key] = dict(document_id=sentence.document_id, page=sentence.page, quote=sentence.quote)
             result['criterion_status'][key] = 'met'
     if result['evidence']:
         result.update(status='completed', predicted_trl=max(int(key[-2:]) for key in result['evidence']))

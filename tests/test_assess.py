@@ -38,6 +38,10 @@ class AssessmentTest(unittest.TestCase):
         self.assertEqual(cite['page'], 1)
         self.assertIn(cite['quote'], self.pages[0].text)
 
+    def test_json_fence_is_accepted(self):
+        result, _ = self.evaluate(['```json\n{"APCTT-C04":"2"}\n```', '```json\n["APCTT-C04"]\n```'], .95)
+        self.assertEqual(result['predicted_trl'], 4)
+
     def test_nli_veto(self):
         result, calls = self.evaluate(['{"APCTT-C04":"2"}'], .30)
         self.assertIsNone(result['predicted_trl'])

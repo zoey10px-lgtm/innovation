@@ -1,0 +1,56 @@
+[
+  {
+    "id": "qwen3-4b-instruct-2507-nf4",
+    "repo": "Qwen/Qwen3-4B-Instruct-2507",
+    "revision": "cdbee75f17c01a7cc42f958dc650907174af0554",
+    "download_bytes": 8060907830,
+    "load": {
+      "library": "transformers",
+      "class": "AutoModelForCausalLM",
+      "dtype": "bfloat16",
+      "quantization": {
+        "method": "bitsandbytes-nf4"
+      },
+      "trust_remote_code": false
+    }
+  },
+  {
+    "id": "scincl",
+    "repo": "malteos/scincl",
+    "revision": "ebc5348d184ba2fc9beee69b4e394263fce57b2e",
+    "download_bytes": 439929063,
+    "load": {
+      "library": "sentence-transformers",
+      "class": "SentenceTransformer",
+      "dtype": "float32",
+      "quantization": null,
+      "trust_remote_code": false
+    }
+  },
+  {
+    "id": "bge-reranker-v2-m3",
+    "repo": "BAAI/bge-reranker-v2-m3",
+    "revision": "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+    "download_bytes": 2293242108,
+    "load": {
+      "library": "sentence-transformers",
+      "class": "CrossEncoder",
+      "dtype": "float32",
+      "quantization": null,
+      "trust_remote_code": false
+    }
+  },
+  {
+    "id": "deberta-v3-large-zeroshot-v2.0-c",
+    "repo": "MoritzLaurer/deberta-v3-large-zeroshot-v2.0-c",
+    "revision": "b2730f16019076bb0009481121efbe4705e0e378",
+    "download_bytes": 881300219,
+    "load": {
+      "library": "transformers",
+      "class": "AutoModelForSequenceClassification",
+      "dtype": "float32",
+      "quantization": null,
+      "trust_remote_code": false
+    }
+  }
+]

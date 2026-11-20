@@ -22,7 +22,8 @@ class Models:
     @cached_property
     def retrieval(self):
         from .two_stage_retrieval import TwoStageRetriever
-        return TwoStageRetriever(self.args.encoder, self.args.reranker, candidate_k=16, final_k=5)
+        return TwoStageRetriever(self.args.encoder, self.args.reranker,
+                                 device=self.args.qwen_device, candidate_k=16, final_k=5)
 
     @cached_property
     def nli(self):
@@ -36,8 +37,18 @@ class Models:
         options = dict(local_files_only=True, trust_remote_code=False)
         tokenizer = AutoTokenizer.from_pretrained(self.args.qwen, **options)
         device = self.args.qwen_device
-        if device == 'cuda':
-            options.update(device_map={'': 0}, dtype=torch.float16)
+        if device.startswith('cuda'):
+            import gc
+
+            self.__dict__.pop('retrieval', None)
+            gc.collect()
+            torch.cuda.empty_cache()
+            from transformers import BitsAndBytesConfig
+            index = torch.device(device).index or 0
+            options.update(device_map={'': index}, dtype=torch.bfloat16,
+                           quantization_config=BitsAndBytesConfig(
+                               load_in_4bit=True, bnb_4bit_quant_type='nf4',
+                               bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16))
         else:
             options['dtype'] = torch.bfloat16
         model = AutoModelForCausalLM.from_pretrained(self.args.qwen, **options)

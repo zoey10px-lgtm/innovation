@@ -4,11 +4,11 @@ Independent APCTT TRL evidence extraction and cross-verification experiment.
 
 The engine retrieves sentence windows using an encoder and a cross-encoder. Each window has a center sentence and one neighbor in each direction. The shortlist covers up to five pages. Qwen proposes one existing sentence ID per supported criterion. DeBERTa verifies the exact center sentence against the target and criterion and checks that work was performed for C03–C09. A second Qwen call reviews the surviving citations. The output reports the highest criterion both checks accepted, with the original excerpt and page, or abstains.
 
-The diagnostic CLI covers C01–C09. The outer worker enforces a default 180-second wall-time budget including model load. Retrieval and NLI run on CPU. Only the Qwen worker loads its model on CUDA in the target profile.
+The diagnostic CLI covers C01–C09. The outer worker enforces a default 180-second wall-time budget including model load. The target profile runs retrieval on CUDA, releases retrieval models before loading Qwen, and uses CPU for NLI.
 
 ## Target profile
 
-Use the local checkpoint directories for `scincl`, `bge-reranker-v2-m3`, `qwen3-4b-instruct-2507-nf4`, and `deberta-v3-large-zeroshot-v2.0-c`. Install dependencies before going offline. The Qwen checkpoint directory must be a Transformers-compatible local NF4 export.
+Use the local checkpoint directories for `scincl`, `bge-reranker-v2-m3`, `qwen3-4b-instruct-2507-nf4`, and `deberta-v3-large-zeroshot-v2.0-c`. Install dependencies before going offline. Point Qwen at the catalog-pinned publisher checkpoint. The CLI quantizes it at load time using bitsandbytes NF4 with double quantization and BF16 compute. See `model-profile.json` for pinned revisions.
 
 ```sh
 python -m innovation --pdf report.pdf --target "Assessed technology" \
@@ -34,4 +34,4 @@ The default pipeline uses unmodified Qwen weights. To fine-tune locally, install
 
 Run `python -m training.train_lora --qwen /models/qwen --train train.jsonl --dev dev.jsonl --output adapter`. To evaluate an adapter, pass `--qwen-adapter adapter` to the assessment CLI. The offline data conversion was checked with 468 training and 18 validation examples from earlier evidence-pair data, with no shared group identifiers. No LoRA weights have been trained for this repository.
 
-CUDA runs record PyTorch peak allocated and reserved memory. Validate the full target GPU profile with the exact checkpoint exports before interpreting those measurements as an 8 GB deployment result. This repository is a research CLI and benchmark, without an official submission adapter.
+CUDA runs record PyTorch peak allocated and reserved memory. Validate the full target GPU profile with the exact checkpoint exports before interpreting those measurements as an 8 GB deployment result. The kit adapter entry point is `innovation.adapter:AssessmentModule`. Set `APCTT_MODEL_STORE` to the catalog-layout model directory. C10–C12 are surfaced as insufficient evidence by this TRL-only experiment. The kit adapter and official packaging still require a CUDA kit smoke run.

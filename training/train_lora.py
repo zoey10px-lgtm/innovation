@@ -24,14 +24,17 @@ def main():
     os.environ['HF_HUB_OFFLINE'] = '1'
     import torch
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, Trainer, TrainingArguments
 
     if not torch.cuda.is_available():
         parser.error('LoRA training requires CUDA.')
     options = dict(local_files_only=True, trust_remote_code=False)
     tokenizer = AutoTokenizer.from_pretrained(args.qwen, **options)
     model = AutoModelForCausalLM.from_pretrained(
-        args.qwen, device_map={'': 0}, dtype=torch.float16, **options)
+        args.qwen, device_map={'': 0}, dtype=torch.bfloat16,
+        quantization_config=BitsAndBytesConfig(
+            load_in_4bit=True, bnb_4bit_quant_type='nf4', bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=torch.bfloat16), **options)
     if getattr(model, 'is_loaded_in_4bit', False):
         model = prepare_model_for_kbit_training(model)
     model = get_peft_model(model, LoraConfig(r=8, lora_alpha=16, target_modules=['q_proj', 'v_proj'],
