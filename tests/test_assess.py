@@ -164,6 +164,26 @@ class AssessmentTest(unittest.TestCase):
         self.assertEqual(len(items), 2)
         self.assertNotIn('Future', items[0].quote)
 
+    def test_extraction_receives_per_criterion_candidate_ids_and_logs_locations(self):
+        criteria = {
+            'APCTT-C02': 'A practical pump concept is formulated.',
+            'APCTT-C04': self.criteria['APCTT-C04'],
+        }
+
+        def retrieve(query, documents):
+            return [(0, .8)] if 'concept' in query else [(1, .9)]
+
+        def generate(instruction, payload, deadline):
+            self.assertIn('APCTT-C02: A practical pump concept is formulated. [Ranked IDs: 1]', payload)
+            self.assertIn(f"APCTT-C04: {criteria['APCTT-C04']} [Ranked IDs: 2]", payload)
+            return '{}'
+
+        result = assess('Pump X', self.pages, criteria, retrieve, generate, None, time.monotonic() + 5)
+        self.assertEqual(result['trace']['candidate_ids_by_criterion'],
+                         {'APCTT-C02': ['1'], 'APCTT-C04': ['2']})
+        self.assertEqual(result['trace']['candidate_locations']['2'], {'page': 1, 'document_id': 'report'})
+        self.assertEqual(result['trace']['proposed_evidence'], {})
+
     def test_page_budget(self):
         pages = [SimpleNamespace(number=i, text=self.pages[0].text) for i in range(1, 10)]
         sentences = list(sentence_windows(pages))
