@@ -1,0 +1,32 @@
+{
+  "case": 8,
+  "criteria": [
+    "APCTT-C08"
+  ],
+  "encoder": "scincl",
+  "reranker": "bge-reranker-v2-m3",
+  "device": "cpu",
+  "seconds": 29.58,
+  "ranked": [
+    {
+      "page": 8,
+      "score": 0.8290750266971764
+    },
+    {
+      "page": 4,
+      "score": 0.7405685388660288
+    },
+    {
+      "page": 8,
+      "score": 0.631608866718473
+    },
+    {
+      "page": 12,
+      "score": 0.5751791945106133
+    },
+    {
+      "page": 4,
+      "score": 0.537944983225025
+    }
+  ]
+}

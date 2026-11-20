@@ -1,0 +1,20 @@
+{
+  "cases": 11,
+  "exact_matches": 2,
+  "statuses": {
+    "abstained": 6,
+    "completed": 2,
+    "timeout": 3
+  },
+  "within_budget": 8,
+  "median_seconds": 81.51,
+  "max_non_timeout_seconds": 110.291,
+  "models": [
+    "all-MiniLM-L6-v2",
+    "ms-marco-MiniLM-L6-v2",
+    "Qwen3-1.7B",
+    "deberta-v3-large-zeroshot-v2.0-c"
+  ],
+  "device": "cpu",
+  "note": "Cases 8 and 9 rerun after accepting fenced JSON. Recorded before the PDF bullet-boundary change. References are provisional. This is not a target profile benchmark."
+}

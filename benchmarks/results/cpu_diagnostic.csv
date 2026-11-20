@@ -1,0 +1,12 @@
+id,reference,predicted_trl,status,seconds,citation_pages,rerun
+1,1,,abstained,24.443,,False
+2,2,,abstained,48.27,,False
+3,3,,abstained,81.509,,False
+8,8,8,completed,110.291,12,True
+9,9,9,completed,94.413,14,True
+32,5,,timeout,180.187,,False
+40,7,,timeout,180.211,,False
+43,7,,timeout,180.039,,False
+101,4,,abstained,35.751,,False
+102,6,,abstained,38.456,,False
+103,7,,abstained,53.804,,False

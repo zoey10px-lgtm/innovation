@@ -57,6 +57,12 @@ class AssessmentTest(unittest.TestCase):
             self.assertFalse(result['evidence'])
             self.assertEqual(len(calls), 1)
 
+    def test_pdf_bullets_separate_completed_and_future_work(self):
+        pages = [SimpleNamespace(number=1, text='– Pump X completed testing in the lab\r\n– Future work will test another prototype')]
+        items = list(sentence_windows(pages))
+        self.assertEqual(len(items), 2)
+        self.assertNotIn('Future', items[0].quote)
+
     def test_page_budget(self):
         pages = [SimpleNamespace(number=i, text=self.pages[0].text) for i in range(1, 10)]
         sentences = list(sentence_windows(pages))

@@ -1,0 +1,12 @@
+{
+  "case": 8,
+  "reference": 8,
+  "device": "cpu",
+  "encoder": "scincl",
+  "reranker": "bge-reranker-v2-m3",
+  "qwen": "Qwen3-1.7B",
+  "nli": "deberta-v3-large-zeroshot-v2.0-c",
+  "status": "timeout",
+  "predicted_trl": null,
+  "seconds": 180.183
+}
