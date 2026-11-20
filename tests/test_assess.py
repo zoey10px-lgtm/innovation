@@ -78,6 +78,12 @@ class AssessmentTest(unittest.TestCase):
                 result, _ = self.evaluate([proposal, '[]'], 0, key)
                 self.assertEqual(result['status'], 'abstained')
 
+    def test_review_accepts_short_id_only_for_verified_criterion(self):
+        result, _ = self.evaluate(
+            ['{"APCTT-C08":"2"}', '["C08","C09","C10",8,null]'], .8835, 'APCTT-C08')
+        self.assertEqual(result['predicted_trl'], 8)
+        self.assertEqual(list(result['evidence']), ['APCTT-C08'])
+
     def test_llm_veto(self):
         result, _ = self.evaluate(['{"APCTT-C04":"2"}', '[]'], .95)
         self.assertEqual(result['status'], 'abstained')

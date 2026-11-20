@@ -129,7 +129,11 @@ def assess(target, pages, criteria, retrieve, generate, verify, deadline):
         raise TimeoutError('Assessment deadline')
     result['trace']['review_output'] = raw
     for key in decode(raw, list, []):
-        if isinstance(key, str) and key in passed:
+        if not isinstance(key, str):
+            continue
+        if re.fullmatch(r'C0[1-9]', key):
+            key = f'APCTT-{key}'
+        if key in passed:
             sentence = passed[key]
             result['evidence'][key] = dict(document_id=sentence.document_id, page=sentence.page, quote=sentence.quote)
             result['criterion_status'][key] = 'met'
