@@ -1,0 +1,9 @@
+torch>=2.5
+transformers>=4.57,<5
+sentence-transformers>=5.1,<6
+accelerate>=1.4
+bitsandbytes>=0.46
+safetensors>=0.4
+sentencepiece>=0.2
+pypdfium2>=4
+pypdf>=5
