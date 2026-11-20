@@ -101,32 +101,26 @@ def assess(target, pages, criteria, retrieve, generate, verify, deadline):
     if not proposed:
         return result
 
-    pairs, groups = [], []
-    for key, sentence in proposed.items():
-        level = int(key[-2:])
-        checks = [
-            (sentence.quote, f'For {target}, {criteria[key]}'),
-        ]
-        if level >= 3:
-            checks.append((sentence.quote, f'The reported activity for {target} was actually performed, with a result or evidence of execution.'))
-        groups.append((key, len(pairs), len(checks)))
-        pairs.extend(checks)
-    scores = verify(pairs)
-    if len(scores) != len(pairs):
-        raise ValueError('Unexpected NLI result count')
-    passed = {}
-    for key, offset, size in groups:
-        items = scores[offset:offset + size]
-        result['trace'].setdefault('nli', {})[key] = [
-            dict(entailment=item.entailment, contradiction=item.contradiction) for item in items]
-        minimum = 0.85 if int(key[-2:]) >= 8 else 0.75
-        if all(item.entailment >= minimum and item.contradiction <= 0.10 for item in items):
-            passed[key] = proposed[key]
+    # Principles and concepts do not require evidence of completed work (C01-C02).
+    performed_checks = {key: sentence for key, sentence in proposed.items() if int(key[-2:]) >= 3}
+    passed = {key: sentence for key, sentence in proposed.items() if key not in performed_checks}
+    if performed_checks:
+        claim = f'The reported activity for {target} was actually performed, with a result or evidence of execution.'
+        pairs = [(sentence.quote, claim) for sentence in performed_checks.values()]
+        scores = verify(pairs)
+        if len(scores) != len(pairs):
+            raise ValueError('Unexpected NLI result count')
+        for (key, sentence), score in zip(performed_checks.items(), scores):
+            result['trace'].setdefault('nli', {})[key] = [
+                dict(entailment=score.entailment, contradiction=score.contradiction)]
+            minimum = 0.85 if int(key[-2:]) >= 8 else 0.75
+            if score.entailment >= minimum and score.contradiction <= 0.10:
+                passed[key] = sentence
     if not passed:
         return result
 
     review_data = {key: dict(criterion=criteria[key], excerpt=sentence.context)
-                   for key, sentence in passed.items()}
+                   for key, sentence in proposed.items() if key in passed}
     raw = generate(REVIEW, dict(target=target, candidates=review_data), deadline)
     if time.monotonic() >= deadline:
         raise TimeoutError('Assessment deadline')

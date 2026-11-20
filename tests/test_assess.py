@@ -13,7 +13,7 @@ class AssessmentTest(unittest.TestCase):
             'Future work will focus on testing a different pump.'))]
         self.criteria = {'APCTT-C04': 'The target completed testing in the laboratory.'}
 
-    def evaluate(self, outputs, score):
+    def evaluate(self, outputs, score, criterion_id="APCTT-C04", contradiction=0):
         calls = []
         responses = iter(outputs)
 
@@ -22,11 +22,16 @@ class AssessmentTest(unittest.TestCase):
             return next(responses)
 
         def verify(pairs):
-            self.assertEqual(len(pairs), 2)
-            self.assertTrue(all('50 liters' in quote and 'Future work' not in quote for quote, _ in pairs))
-            return [SimpleNamespace(entailment=score, contradiction=0)] * len(pairs)
+            self.assertGreaterEqual(int(criterion_id[-2:]), 3)
+            self.assertEqual(len(pairs), 1)
+            quote, claim = pairs[0]
+            self.assertIn('50 liters', quote)
+            self.assertNotIn('Future work', quote)
+            self.assertIn('actually performed', claim)
+            self.assertNotIn(self.criteria['APCTT-C04'], claim)
+            return [SimpleNamespace(entailment=score, contradiction=contradiction)]
 
-        result = assess('Pump X', self.pages, self.criteria, lambda *_: [(1, 0.9)],
+        result = assess('Pump X', self.pages, {criterion_id: self.criteria['APCTT-C04']}, lambda *_: [(1, 0.9)],
                         generate, verify, time.monotonic() + 5)
         return result, calls
 
@@ -46,6 +51,32 @@ class AssessmentTest(unittest.TestCase):
         result, calls = self.evaluate(['{"APCTT-C04":"2"}'], .30)
         self.assertIsNone(result['predicted_trl'])
         self.assertEqual(len(calls), 1)
+
+    def test_high_levels_use_only_the_work_performed_check(self):
+        for level in (8, 9):
+            key = f'APCTT-C{level:02d}'
+            proposal, approval = f'{{"{key}":"2"}}', f'["{key}"]'
+            with self.subTest(criterion=key):
+                result, calls = self.evaluate([proposal, approval], .8835, key)
+                self.assertEqual(result['predicted_trl'], level)
+                self.assertEqual(len(result['trace']['nli'][key]), 1)
+                self.assertEqual(len(calls), 2)
+                for score, contradiction in ((.84, 0), (.90, .11)):
+                    result, calls = self.evaluate([proposal], score, key, contradiction)
+                    self.assertEqual(result['status'], 'abstained')
+                    self.assertEqual(len(calls), 1)
+
+    def test_principles_and_concepts_still_go_through_qwen_review(self):
+        for level in (1, 2):
+            key = f'APCTT-C{level:02d}'
+            proposal = f'{{"{key}":"2"}}'
+            with self.subTest(criterion=key):
+                result, calls = self.evaluate([proposal, f'["{key}"]'], 0, key)
+                self.assertEqual(result['predicted_trl'], level)
+                self.assertNotIn('nli', result['trace'])
+                self.assertEqual(len(calls), 2)
+                result, _ = self.evaluate([proposal, '[]'], 0, key)
+                self.assertEqual(result['status'], 'abstained')
 
     def test_llm_veto(self):
         result, _ = self.evaluate(['{"APCTT-C04":"2"}', '[]'], .95)
