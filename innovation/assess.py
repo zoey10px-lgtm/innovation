@@ -77,14 +77,15 @@ RETRIEVAL_CUES = {
 TOKEN = re.compile(r'[a-z][a-z0-9-]{2,}')
 COMPLETED = re.compile(r'\b(?:built|tested|operated|demonstrated|measured|measurements?|completed|qualified|validated|achieved|executed|observed|deployed|passed)\b')
 PLANNED = re.compile(r'\b(?:will|shall|objective|goal|planned|would|proposed)\b')
+OUTCOME = re.compile(r'\b(?:completed successfully|successfully completed|successfully operated|operated successfully|measured|met requirements|achieved)\b')
 COMMON_TARGET_WORDS = {'and', 'the', 'for', 'with', 'system', 'technology', 'unit', 'from', 'into'}
-CANDIDATES_PER_CRITERION = 3
+CANDIDATES_PER_CRITERION = 4
 
 
-def lexical_candidate(target_words, sentences, level):
+def lexical_candidates(target_words, sentences, level, limit=2):
     """Give explicit evidence language a route independent of semantic ranking."""
     patterns = RETRIEVAL_CUES[level]
-    best_score, best_index = (0, 0, 0), None
+    ranked = []
     for index, sentence in enumerate(sentences):
         quote = sentence.quote.casefold()
         count = sum(bool(re.search(pattern, quote)) for pattern in patterns)
@@ -93,10 +94,10 @@ def lexical_candidate(target_words, sentences, level):
         overlap = len(target_words.intersection(TOKEN.findall(sentence.context.casefold())))
         completed = bool(COMPLETED.search(quote))
         time_signal = int(completed) - int(bool(PLANNED.search(quote)) and not completed) if level >= 3 else 0
-        score = (count, time_signal, overlap)
-        if score > best_score:
-            best_score, best_index = score, index
-    return best_index
+        outcome = int(bool(OUTCOME.search(quote))) if level >= 3 else 0
+        ranked.append(((count, time_signal, outcome, overlap), index))
+    ranked.sort(key=lambda row: row[0], reverse=True)
+    return [index for _, index in ranked[:limit]]
 
 
 def sentence_windows(pages):
@@ -212,9 +213,8 @@ def assess(target, pages, criteria, retrieve, generate, verify, deadline):
     alternatives = {}
     for key, hits in zip(criteria, rankings, strict=True):
         semantic = [str(index + 1) for index, _ in hits]
-        lexical = lexical_candidate(target_words, sentences, int(key[-2:]))
-        ordered = [proposed_ids.get(key), *semantic[:1],
-                   str(lexical + 1) if lexical is not None else None, *semantic[1:]]
+        lexical = [str(index + 1) for index in lexical_candidates(target_words, sentences, int(key[-2:]))]
+        ordered = [proposed_ids.get(key), *semantic[:1], *lexical, *semantic[1:]]
         alternatives[key] = list(dict.fromkeys(value for value in ordered if value))[:CANDIDATES_PER_CRITERION]
     result['trace']['validation_candidates'] = alternatives
     candidate_ids = dict.fromkeys(value for ids in alternatives.values() for value in ids)
