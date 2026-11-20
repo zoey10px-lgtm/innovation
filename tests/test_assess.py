@@ -1,8 +1,10 @@
+import json
 import time
 import unittest
 from types import SimpleNamespace
 
-from innovation.assess import assess, sentence_windows, shortlist
+from innovation.__main__ import review_token_constraint
+from innovation.assess import ReviewRequest, assess, sentence_windows, shortlist
 
 
 class AssessmentTest(unittest.TestCase):
@@ -21,12 +23,16 @@ class AssessmentTest(unittest.TestCase):
             calls.append(args)
             return next(responses)
 
+        checked_quotes = []
+
         def verify(pairs):
             self.assertGreaterEqual(int(criterion_id[-2:]), 3)
             self.assertEqual(len(pairs), 1)
             quote, claim = pairs[0]
             self.assertIn('50 liters', quote)
-            self.assertNotIn('Future work', quote)
+            if not checked_quotes:
+                self.assertNotIn('Future work', quote)
+            checked_quotes.append(quote)
             self.assertIn('actually performed', claim)
             self.assertNotIn(self.criteria['APCTT-C04'], claim)
             return [SimpleNamespace(entailment=score, contradiction=contradiction)]
@@ -87,6 +93,64 @@ class AssessmentTest(unittest.TestCase):
     def test_llm_veto(self):
         result, _ = self.evaluate(['{"APCTT-C04":"2"}', '[]'], .95)
         self.assertEqual(result['status'], 'abstained')
+
+    def test_failed_center_retries_with_exact_next_sentence(self):
+        result_sent = 'The laboratory measured a repeatable pump flow under operating load.'
+        text = f'A pump test was scheduled for last May.\r\n{result_sent}'
+        pages = [SimpleNamespace(number=5, text=text)]
+        scores = iter([.30, .92])
+        batches = []
+
+        def verify(pairs):
+            batches.append(pairs[0][0])
+            return [SimpleNamespace(entailment=next(scores), contradiction=0)]
+
+        def generate(instruction, payload, deadline):
+            if not isinstance(payload, ReviewRequest):
+                return '{"APCTT-C04":"1"}'
+            self.assertIn(text, payload['candidates']['APCTT-C04']['excerpt'])
+            return '["C04"]'
+
+        result = assess('Pump X', pages, self.criteria, lambda *_: [(0, .9)],
+                        generate, verify, time.monotonic() + 5)
+        self.assertEqual(batches, ['A pump test was scheduled for last May.', text])
+        self.assertEqual(result['evidence']['APCTT-C04']['quote'], text)
+        self.assertEqual(result['evidence']['APCTT-C04']['page'], 5)
+        self.assertEqual([item['span'] for item in result['trace']['nli']['APCTT-C04']],
+                         ['center', 'center_and_next'])
+        self.assertEqual(list(sentence_windows([SimpleNamespace(number=6, text=result_sent)]))[0].extended_quote, '')
+
+    def test_invalid_review_has_its_own_error(self):
+        result, _ = self.evaluate(['{"APCTT-C04":"2"}', 'C04 was rejected, reasoning follows'], .95)
+        self.assertEqual(result['error'], 'review_format_error')
+        self.assertTrue(result['trace']['review_format_error'])
+        self.assertFalse(result['evidence'])
+
+    def test_decoding_constraint_only_allows_candidate_subsets(self):
+        def tokenizer(options, add_special_tokens=False):
+            return {'input_ids': [list(map(ord, option)) for option in options]}
+
+        eos = 1000
+        allowed, limit = review_token_constraint(tokenizer, ['APCTT-C04', 'APCTT-C08'], 2, eos)
+        outputs = set()
+
+        def visit(tokens):
+            self.assertLess(len(tokens), limit)
+            for token in allowed(0, SimpleTokens([1, 2, *tokens])):
+                if token == eos:
+                    outputs.add(tuple(json.loads(''.join(map(chr, tokens)))))
+                else:
+                    visit([*tokens, token])
+
+        class SimpleTokens(list):
+            def __getitem__(self, key):
+                return SimpleTokens(super().__getitem__(key))
+
+            def tolist(self):
+                return list(self)
+
+        visit([])
+        self.assertEqual(outputs, {(), ('C04',), ('C08',), ('C04', 'C08')})
 
     def test_reject_unknown_id_and_malformed_json(self):
         for raw in ('{"APCTT-C04":"99","APCTT-C09":"2"}', 'not json'):

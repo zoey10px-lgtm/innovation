@@ -1,6 +1,7 @@
 """Run one offline assessment within a subprocess wall-time budget."""
 import argparse
 from functools import cached_property
+from itertools import combinations
 import json
 import os
 from pathlib import Path
@@ -11,8 +12,26 @@ import time
 os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
-from .assess import assess
+from .assess import ReviewRequest, assess
 from .pdf_parser import read_pdf
+
+
+def review_token_constraint(tokenizer, candidate_ids, prompt_length, eos_token_id):
+    """Constrain decoding to one JSON array of a subset of the supplied IDs."""
+    keys = sorted(key.removeprefix('APCTT-') for key in candidate_ids)
+    options = [json.dumps(group, separators=(',', ':'))
+               for size in range(len(keys) + 1) for group in combinations(keys, size)]
+    sequences = tokenizer(options, add_special_tokens=False)['input_ids']
+    allowed = {}
+    for tokens in sequences:
+        for index, token in enumerate([*tokens, eos_token_id]):
+            allowed.setdefault(tuple(tokens[:index]), set()).add(token)
+    allowed = {prefix: sorted(tokens) for prefix, tokens in allowed.items()}
+
+    def allowed_tokens(_batch_id, input_ids):
+        return allowed[tuple(input_ids[prompt_length:].tolist())]
+
+    return allowed_tokens, max(map(len, sequences)) + 1
 
 
 class Models:
@@ -71,9 +90,17 @@ class Models:
             raise TimeoutError('Qwen generation budget')
         if length > 8192:
             raise ValueError('Candidate prompt exceeded 8192 tokens')
+        generation_options = dict(max_new_tokens=160, do_sample=False, max_time=remaining - 1)
+        if isinstance(data, ReviewRequest):
+            eos = model.generation_config.eos_token_id
+            if isinstance(eos, (list, tuple)):
+                eos = eos[0] if eos else None
+            if eos is None:
+                eos = tokenizer.eos_token_id
+            constraint, limit = review_token_constraint(tokenizer, data['candidates'], length, eos)
+            generation_options.update(prefix_allowed_tokens_fn=constraint, max_new_tokens=limit)
         with torch.inference_mode():
-            generated = model.generate(**inputs, max_new_tokens=160, do_sample=False,
-                                       max_time=remaining - 1)
+            generated = model.generate(**inputs, **generation_options)
         return tokenizer.decode(generated[0, length:], skip_special_tokens=True)
 
 
