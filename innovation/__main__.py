@@ -1,7 +1,6 @@
 """Run one offline assessment within a subprocess wall-time budget."""
 import argparse
 from functools import cached_property
-from itertools import combinations
 import json
 import os
 from pathlib import Path
@@ -12,26 +11,30 @@ import time
 os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
-from .assess import ReviewRequest, assess
+from .assess import FactReviewRequest, assess
 from .pdf_parser import read_pdf
 
 
-def review_token_constraint(tokenizer, candidate_ids, prompt_length, eos_token_id):
-    """Constrain decoding to one JSON array of a subset of the supplied IDs."""
-    keys = sorted(key.removeprefix('APCTT-') for key in candidate_ids)
-    options = [json.dumps(group, separators=(',', ':'))
-               for size in range(len(keys) + 1) for group in combinations(keys, size)]
-    sequences = tokenizer(options, add_special_tokens=False)['input_ids']
-    allowed = {}
-    for tokens in sequences:
-        for index, token in enumerate([*tokens, eos_token_id]):
-            allowed.setdefault(tuple(tokens[:index]), set()).add(token)
-    allowed = {prefix: sorted(tokens) for prefix, tokens in allowed.items()}
+def fact_token_constraint(tokenizer, count, prompt_length, eos_token_id):
+    """Permit only a JSON array of exactly count binary decisions."""
+    bracket, zero, one, comma, closing = tokenizer(
+        ['[', '0', '1', ',', ']'], add_special_tokens=False)['input_ids']
+    if tokenizer.decode(bracket + zero + comma + one + closing, skip_special_tokens=True) != '[0,1]':
+        raise ValueError('Tokenizer cannot encode the constrained fact response')
+    if len(zero) != 1 or len(one) != 1:
+        raise ValueError('Tokenizer must encode each review decision as one token')
+    schedule = [[token] for token in bracket]
+    for index in range(count):
+        if index:
+            schedule.extend([token] for token in comma)
+        schedule.append([zero[0], one[0]])
+    schedule.extend([token] for token in closing)
+    schedule.append([eos_token_id])
 
     def allowed_tokens(_batch_id, input_ids):
-        return allowed[tuple(input_ids[prompt_length:].tolist())]
+        return schedule[len(input_ids) - prompt_length]
 
-    return allowed_tokens, max(map(len, sequences)) + 1
+    return allowed_tokens, len(schedule)
 
 
 class Models:
@@ -91,13 +94,13 @@ class Models:
         if length > 8192:
             raise ValueError('Candidate prompt exceeded 8192 tokens')
         generation_options = dict(max_new_tokens=160, do_sample=False, max_time=remaining - 1)
-        if isinstance(data, ReviewRequest):
+        if isinstance(data, FactReviewRequest):
             eos = model.generation_config.eos_token_id
             if isinstance(eos, (list, tuple)):
                 eos = eos[0] if eos else None
             if eos is None:
                 eos = tokenizer.eos_token_id
-            constraint, limit = review_token_constraint(tokenizer, data['candidates'], length, eos)
+            constraint, limit = fact_token_constraint(tokenizer, data['check_count'], length, eos)
             generation_options.update(prefix_allowed_tokens_fn=constraint, max_new_tokens=limit)
         with torch.inference_mode():
             generated = model.generate(**inputs, **generation_options)

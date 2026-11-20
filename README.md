@@ -2,7 +2,7 @@
 
 Independent APCTT TRL evidence extraction and cross-verification experiment.
 
-The engine retrieves sentence windows using an encoder and a cross-encoder. Each window has a center sentence and one neighbor in each direction. The shortlist covers up to five pages. Qwen proposes one existing sentence ID per supported criterion. DeBERTa checks the exact center sentence for completed work on the target for C03–C09. A second Qwen call verifies the surviving citations against their full criteria and the exact target, including C01–C02. The output reports the highest criterion that passed its checks, with the original excerpt and page, or abstains.
+The engine retrieves sentence windows using an encoder and a cross-encoder. Each window has a center sentence and one neighbor in each direction. Qwen's first pass sees a shortlist spanning up to five pages. For each criterion, up to three distinct candidates can reach verification from Qwen's proposal, the semantic ranking, and lexical retrieval. DeBERTa checks C03–C09 for completed work, with a specific successful-operation-and-duration claim for C09. The final Qwen review returns constrained binary JSON for the target and each fact required by the criterion. A candidate must pass all of its checks. The engine reports the highest passing stage and the original evidence; its trace records the fallback candidates and factual decisions.
 
 The diagnostic CLI covers C01–C09. The outer worker enforces a default 180-second wall-time budget including model load. The target profile runs retrieval on CUDA, releases retrieval models before loading Qwen, and uses CPU for NLI.
 
