@@ -15,9 +15,9 @@ class TwoStageRetriever:
         import torch
         from torch.nn import Identity
 
-        self.encoder = SentenceTransformer(encoder_path, device=device, local_files_only=True)
+        self.encoder = SentenceTransformer(str(encoder_path), device=device, local_files_only=True)
         self.reranker = CrossEncoder(
-            reranker_path, device=device, local_files_only=True, activation_fn=Identity(),
+            str(reranker_path), device=device, local_files_only=True, activation_fn=Identity(),
             max_length=384 if device.startswith("cuda") else None, model_kwargs={"torch_dtype": torch.float16} if device.startswith("cuda") else {},
         )
         if self.reranker.model.config.num_labels != 1:

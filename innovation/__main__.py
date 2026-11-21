@@ -12,6 +12,7 @@ os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 from .assess import FactReviewRequest, assess
+from .page_context import assess_pages
 from .pdf_parser import Page, read_pdf
 
 
@@ -91,8 +92,8 @@ class Models:
         remaining = deadline - time.monotonic()
         if remaining <= 2:
             raise TimeoutError('Qwen generation budget')
-        if length > 8192:
-            raise ValueError('Candidate prompt exceeded 8192 tokens')
+        if length + 160 > model.config.max_position_embeddings:
+            raise ValueError('Full pages exceed model context')
         generation_options = dict(max_new_tokens=160, do_sample=False, max_time=remaining - 1)
         if isinstance(data, FactReviewRequest):
             eos = model.generation_config.eos_token_id
@@ -124,13 +125,15 @@ def run(args):
         pages = read_pdf(args.pdf, 'report', remaining_ms=lambda: max(0, int((deadline - time.monotonic()) * 1000)))
     models = Models(args)
 
-    def check(pairs):
-        if deadline - time.monotonic() <= 2:
-            raise TimeoutError('NLI verification budget')
-        return models.nli.predict_batch(pairs, batch_size=4)
-
-    result = assess(args.target, pages, criteria, lambda q, t: models.retrieval.retrieve(q, t),
-                    models.generate, check, deadline)
+    retrieve = lambda q, t: models.retrieval.retrieve(q, t)
+    if args.legacy:
+        from .learned_candidates import LearnedCandidates
+        ranker = LearnedCandidates(Path(__file__).resolve().parent.parent / 'trained_ranker.json')
+        result = assess(args.target, pages, criteria, retrieve, models.generate,
+                        lambda pairs: models.nli.predict_batch(pairs, batch_size=4), deadline, nominate=ranker.rank)
+    else:
+        result = assess_pages(args.target, pages, criteria, retrieve, models.generate, deadline,
+                              {'report': args.pdf} if args.pdf else None)
     if args.qwen_device == 'cuda' and 'qwen' in models.__dict__:
         result['peak_cuda_reserved_mib'] = round(torch.cuda.max_memory_reserved() / 1024 ** 2, 2)
         result['peak_cuda_allocated_mib'] = round(torch.cuda.max_memory_allocated() / 1024 ** 2, 2)
@@ -139,6 +142,7 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--legacy', action='store_true', help='Development comparison only')
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument('--pdf')
     source.add_argument('--pages-json', help='Pre-extracted pages for model-only evaluation')
