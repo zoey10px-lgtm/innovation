@@ -257,7 +257,7 @@ def review_facts(candidates, criteria, target, candidate_ids, generate, deadline
     return reviewed
 
 
-def assess(target, pages, criteria, retrieve, generate, verify, deadline):
+def assess(target, pages, criteria, retrieve, generate, verify, deadline, nominate=None):
     start = time.monotonic()
     result = {'status': 'abstained', 'predicted_trl': None, 'evidence': {},
               'criterion_status': dict.fromkeys(criteria, 'insufficient evidence'), 'trace': {}}
@@ -293,11 +293,12 @@ def assess(target, pages, criteria, retrieve, generate, verify, deadline):
     result['trace']['proposed_evidence'] = proposed_ids
 
     target_words = set(TOKEN.findall(target.casefold())) - COMMON_TARGET_WORDS
+    learned = nominate(target, sentences) if nominate else {}
     alternatives = {}
     for key, hits in zip(criteria, rankings, strict=True):
         semantic = [str(index + 1) for index, _ in hits]
         lexical = [str(index + 1) for index in lexical_candidates(target_words, sentences, int(key[-2:]))]
-        ordered = [proposed_ids.get(key), *semantic[:1], *lexical, *semantic[1:]]
+        ordered = [proposed_ids.get(key), *semantic[:1], learned.get(key), *lexical, *semantic[1:]]
         alternatives[key] = list(dict.fromkeys(value for value in ordered if value))[:CANDIDATES_PER_CRITERION]
     result['trace']['validation_candidates'] = alternatives
     candidate_ids = dict.fromkeys(value for ids in alternatives.values() for value in ids)

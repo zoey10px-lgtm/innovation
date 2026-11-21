@@ -7,6 +7,7 @@ import time
 
 from .__main__ import Models
 from .assess import assess
+from .learned_candidates import LearnedCandidates
 from .pdf_parser import read_pdf
 
 
@@ -20,6 +21,8 @@ class AssessmentModule:
                              .read_text(encoding='utf-8'))
         self.paths = {m['id']: self.model_store / m['repo'] / m['revision'] for m in profile}
         self.asset_root = Path(asset_root)
+        ranker = self.asset_root / "trained_ranker.json"
+        self.ranker = LearnedCandidates(ranker) if ranker.is_file() else None
 
     def assess(self, case, context):
         import torch
@@ -47,7 +50,7 @@ class AssessmentModule:
         try:
             outcome = assess(target_text, pages, criteria, lambda q, t: models.retrieval.retrieve(q, t),
                              models.generate, lambda pairs: models.nli.predict_batch(pairs, batch_size=4),
-                             deadline)
+                             deadline, nominate=self.ranker.rank if self.ranker else None)
         except TimeoutError:
             outcome = {'status': 'failed', 'predicted_trl': None, 'evidence': {}}
         evidence = outcome['evidence']
