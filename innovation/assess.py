@@ -60,8 +60,11 @@ REQUIRED_FACTS = {
         'of that article’s function or performance. Observing an underlying physical phenomenon by itself does not '
         'validate the assessed article', 'the test result is reported'),
     5: ('the component or breadboard was tested in an environment representative of intended use', 'the test result is reported'),
-    6: ('a representative prototype of the assessed system or subsystem was demonstrated',
-        'the completed demonstration took place in an environment relevant to intended use'),
+    6: ('CENTER identifies the environment of a completed prototype test, such as field conditions or a test '
+        'chamber that reproduces intended conditions. A thermal-vacuum chamber is a relevant test environment '
+        'for space hardware. A description of intended use alone does not identify a test environment',
+        'CENTER explicitly says that the assessed representative prototype was operated, tested, or demonstrated '
+        'in that environment. Development of a numerical model or simulation alone is insufficient'),
     7: ('a near-final prototype was demonstrated', 'the demonstration took place in the actual operational environment'),
     8: ('the final system was completed', 'the final system was qualified by completed tests against its requirements for the stated scope'),
     9: ('the assessed final technology itself operated successfully in its actual mission or operational environment',
