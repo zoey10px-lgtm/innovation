@@ -2,7 +2,7 @@
 
 Independent APCTT TRL evidence extraction and cross-verification experiment.
 
-The engine retrieves sentence windows using an encoder and a cross-encoder. Each window has a center sentence and one neighbor in each direction. Qwen's first pass sees a shortlist spanning up to five pages. For each criterion, up to four distinct candidates can reach verification from Qwen's proposal, the semantic ranking, and lexical retrieval. DeBERTa checks whether C02 describes a concrete intended mechanism and verifies the evidence for C03–C09, with criterion-specific claims for proof-of-concept results (C03) and sustained target operation (C09). The final Qwen review returns constrained binary JSON for the target and each fact required by the criterion. A candidate must pass all of its checks. If C04 or C05 passes identity and the test checks but lacks a result, it can be reviewed once more together with the immediately following sentence on the same page. The engine reports the highest passing stage and the original evidence; its trace records the fallback candidates and factual decisions.
+The engine retrieves sentence windows using an encoder and a cross-encoder. Each window has a center sentence and one neighbor in each direction. Qwen's first pass sees a shortlist spanning up to five pages. For each criterion, up to four distinct candidates can reach verification from Qwen's proposal, the semantic ranking, and lexical retrieval. DeBERTa checks whether C02 describes a concrete intended mechanism and verifies the evidence for C03–C09, with criterion-specific claims for proof-of-concept results (C03) and sustained target operation (C09). The final Qwen review uses a separate prompt for each criterion and candidate. Each prompt returns constrained binary JSON for the target and the criterion’s required facts. A candidate must pass all of its checks. If C04 or C05 passes identity and the test checks but lacks a result, it can be reviewed once more together with the immediately following sentence on the same page. The engine reports the highest passing stage and the original evidence; its trace records the fallback candidates and factual decisions.
 
 The diagnostic CLI covers C01–C09. The outer worker enforces a default 180-second wall-time budget including model load. The target profile runs retrieval on CUDA, releases retrieval models before loading Qwen, and uses CPU for NLI.
 
@@ -29,6 +29,8 @@ python benchmarks/run.py --output results -- --encoder /models/scincl \
   --reranker /models/bge-reranker-v2-m3 --qwen /models/qwen3-4b-instruct-2507-nf4 \
   --nli /models/deberta-v3-large-zeroshot-v2.0-c
 ```
+
+To test only the two C04 passages that exposed review instability, run `python -m benchmarks.check_c04 --pdf-dir /path/to/pdfs --qwen /path/to/qwen`. This bypasses retrieval and NLI and checks the final Qwen review directly.
 
 Place the 11 PDFs at the paths in `benchmarks/cases/`. Original filenames and checksums are listed in `benchmarks/pdf_sources.csv`. Reference TRLs are provisional. The target GPU profile requires separate validation. Local-model CPU diagnostics use MiniLM, the MS MARCO MiniLM reranker, Qwen3-1.7B, and DeBERTa Large with `--qwen-device cpu`.
 

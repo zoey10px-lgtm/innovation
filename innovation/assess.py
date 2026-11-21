@@ -189,35 +189,35 @@ def check_nli(candidates, target, verify, trace, *, expanded=False):
 
 
 def review_facts(candidates, criteria, target, candidate_ids, generate, deadline, trace, *, expanded=False):
-    rows, positions = {}, {}
-    offset = 0
+    instruction = REVIEW
+    if expanded:
+        instruction += ' Accept a result only if it reports an outcome of the same test on the same target.'
+    reviewed = {}
     for key, sentence in candidates.items():
+        if time.monotonic() >= deadline:
+            raise TimeoutError('Assessment deadline')
         level = int(key[-2:])
         identity = ('the evidence concerns the named technology, its proposed use, or its critical function'
                     if level <= 3 else
                     'the evidence concerns the assessed technology or the prototype or component being assessed')
-        facts = (identity, *REQUIRED_FACTS[level])
-        positions[key] = slice(offset, offset + len(facts))
-        rows[key] = dict(criterion=criteria[key], excerpt=sentence.context,
-                         checks={offset + index: fact for index, fact in enumerate(facts, 1)})
-        offset += len(facts)
-    instruction = REVIEW
-    if expanded:
-        instruction += ' Accept a result only if it reports an outcome of the same test on the same target.'
-    raw_review = generate(instruction, FactReviewRequest(target=target, candidates=rows, check_count=offset), deadline)
-    if time.monotonic() >= deadline:
-        raise TimeoutError('Assessment deadline')
-    trace['review_output'] = raw_review
-    round_log = dict(candidate_ids=candidate_ids, output=raw_review)
-    if expanded:
-        round_log['retry'] = 'next_sentence_for_result'
-    trace.setdefault('review_rounds', []).append(round_log)
-    facts = decode(raw_review, list, None)
-    if facts is None or len(facts) != offset or any(type(flag) is not int or flag not in (0, 1) for flag in facts):
-        trace['review_format_error'] = True
-        return {}
-    round_log['facts'] = {key: facts[span] for key, span in positions.items()}
-    return round_log['facts']
+        checks = (identity, *REQUIRED_FACTS[level])
+        candidate = dict(criterion=criteria[key], excerpt=sentence.context, checks=dict(enumerate(checks, 1)))
+        request = FactReviewRequest(target=target, candidates={key: candidate}, check_count=len(checks))
+        raw_review = generate(instruction, request, deadline)
+        if time.monotonic() >= deadline:
+            raise TimeoutError('Assessment deadline')
+        trace['review_output'] = raw_review
+        entry = dict(candidate_ids={key: candidate_ids[key]}, output=raw_review)
+        if expanded:
+            entry['retry'] = 'next_sentence_for_result'
+        trace.setdefault('review_rounds', []).append(entry)
+        facts = decode(raw_review, list, None)
+        if facts is None or len(facts) != len(checks) or any(type(flag) is not int or flag not in (0, 1) for flag in facts):
+            trace['review_format_error'] = True
+            continue
+        reviewed[key] = facts
+        entry['facts'] = {key: facts}
+    return reviewed
 
 
 def assess(target, pages, criteria, retrieve, generate, verify, deadline):

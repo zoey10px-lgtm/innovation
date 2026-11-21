@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from innovation.__main__ import fact_token_constraint
-from innovation.assess import FactReviewRequest, assess, decode, sentence_windows, shortlist
+from innovation.assess import FactReviewRequest, assess, decode, review_facts, sentence_windows, shortlist
 
 
 def page(text, number=1):
@@ -225,6 +225,26 @@ class AssessmentTest(unittest.TestCase):
         sentences = list(sentence_windows(pages))
         selected = shortlist(sentences, [[(i, 1.0) for i in range(len(sentences))]])
         self.assertLessEqual(len({item.page for item in selected.values()}), 5)
+
+    def test_c04_prompt_is_identical_with_or_without_c02(self):
+        sentence = next(sentence_windows([page('Pump X was tested in a laboratory and delivered 50 liters per minute.')]))
+        target = 'Pump X'
+        criteria = {'APCTT-C02': 'A specific design concept.', 'APCTT-C04': 'Laboratory validation.'}
+        prompts = []
+
+        def generate(instruction, payload, deadline):
+            self.assertEqual(len(payload['candidates']), 1)
+            if 'APCTT-C04' in payload['candidates']:
+                prompts.append((instruction, payload))
+                return '[1,1,1]'
+            return 'invalid JSON'
+
+        for keys in (('APCTT-C02', 'APCTT-C04'), ('APCTT-C04',)):
+            trace = {}
+            facts = review_facts({key: sentence for key in keys}, criteria, target,
+                                 {key: '1' for key in keys}, generate, time.monotonic() + 10, trace)
+            self.assertEqual(facts, {'APCTT-C04': [1, 1, 1]})
+        self.assertEqual(prompts[0], prompts[1])
 
     def test_expired_deadline(self):
         with self.assertRaises(TimeoutError):
