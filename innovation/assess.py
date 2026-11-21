@@ -156,12 +156,14 @@ def decode(raw, shape, default):
     return value if isinstance(value, shape) else default
 
 
-def check_work_performed(candidates, target, verify, trace, *, expanded=False):
+def check_nli(candidates, target, verify, trace, *, expanded=False):
     pairs = []
     for key, sentence in candidates.items():
         level = int(key[-2:])
         premise = sentence.quote
-        if level == 3:
+        if level == 2:
+            claim = f'The report describes a concrete way that {target} would function in a specific application.'
+        elif level == 3:
             # Prior text can distinguish a promised report from a completed result.
             premise = '\n'.join(filter(None, (sentence.preceding_context, sentence.quote)))
             claim = f'The reported analysis or experiment verifies a critical function of {target} with a concrete result.'
@@ -179,10 +181,43 @@ def check_work_performed(candidates, target, verify, trace, *, expanded=False):
         trace.setdefault(key, []).append(dict(
             entailment=score.entailment, contradiction=score.contradiction,
             span='center_and_next' if expanded else 'center'))
-        minimum = 0.85 if int(key[-2:]) >= 8 else 0.75
+        level = int(key[-2:])
+        minimum = 0.55 if level == 2 else 0.85 if level >= 8 else 0.75
         if score.entailment >= minimum and score.contradiction <= 0.10:
             passed[key] = sentence
     return passed
+
+
+def review_facts(candidates, criteria, target, candidate_ids, generate, deadline, trace, *, expanded=False):
+    rows, positions = {}, {}
+    offset = 0
+    for key, sentence in candidates.items():
+        level = int(key[-2:])
+        identity = ('the evidence concerns the named technology, its proposed use, or its critical function'
+                    if level <= 3 else
+                    'the evidence concerns the assessed technology or the prototype or component being assessed')
+        facts = (identity, *REQUIRED_FACTS[level])
+        positions[key] = slice(offset, offset + len(facts))
+        rows[key] = dict(criterion=criteria[key], excerpt=sentence.context,
+                         checks={offset + index: fact for index, fact in enumerate(facts, 1)})
+        offset += len(facts)
+    instruction = REVIEW
+    if expanded:
+        instruction += ' Accept a result only if it reports an outcome of the same test on the same target.'
+    raw_review = generate(instruction, FactReviewRequest(target=target, candidates=rows, check_count=offset), deadline)
+    if time.monotonic() >= deadline:
+        raise TimeoutError('Assessment deadline')
+    trace['review_output'] = raw_review
+    round_log = dict(candidate_ids=candidate_ids, output=raw_review)
+    if expanded:
+        round_log['retry'] = 'next_sentence_for_result'
+    trace.setdefault('review_rounds', []).append(round_log)
+    facts = decode(raw_review, list, None)
+    if facts is None or len(facts) != offset or any(type(flag) is not int or flag not in (0, 1) for flag in facts):
+        trace['review_format_error'] = True
+        return {}
+    round_log['facts'] = {key: facts[span] for key, span in positions.items()}
+    return round_log['facts']
 
 
 def assess(target, pages, criteria, retrieve, generate, verify, deadline):
@@ -244,52 +279,45 @@ def assess(target, pages, criteria, retrieve, generate, verify, deadline):
             break
         if time.monotonic() >= deadline:
             raise TimeoutError('Assessment deadline')
-        performed_checks = {key: sentence for key, sentence in waiting.items() if int(key[-2:]) >= 3}
-        passed = {key: sentence for key, sentence in waiting.items() if key not in performed_checks}
-        if performed_checks:
+        nli_candidates = {key: sentence for key, sentence in waiting.items() if int(key[-2:]) >= 2}
+        passed = {key: sentence for key, sentence in waiting.items() if key not in nli_candidates}
+        if nli_candidates:
             trace = result['trace'].setdefault('nli', {})
-            passed.update(check_work_performed(performed_checks, target, verify, trace))
+            passed.update(check_nli(nli_candidates, target, verify, trace))
             retry = {
                 key: replace(sentence, quote=sentence.extended_quote, context=sentence.extended_context)
-                for key, sentence in performed_checks.items()
+                for key, sentence in nli_candidates.items()
                 if key not in passed and sentence.extended_quote
             }
             if retry:
-                passed.update(check_work_performed(retry, target, verify, trace, expanded=True))
+                passed.update(check_nli(retry, target, verify, trace, expanded=True))
         if not passed:
             continue
 
-        rows, positions = {}, {}
-        offset = 0
-        for key, sentence in passed.items():
-            level = int(key[-2:])
-            identity = ('the evidence concerns the named technology, its proposed use, or its critical function'
-                        if level <= 3 else
-                        'the evidence concerns the assessed technology or the prototype or component being assessed')
-            facts = (identity, *REQUIRED_FACTS[level])
-            positions[key] = slice(offset, offset + len(facts))
-            rows[key] = dict(criterion=criteria[key], excerpt=sentence.context,
-                             checks={offset + index: fact for index, fact in enumerate(facts, 1)})
-            offset += len(facts)
-        raw_review = generate(REVIEW, FactReviewRequest(target=target, candidates=rows, check_count=offset), deadline)
-        if time.monotonic() >= deadline:
-            raise TimeoutError('Assessment deadline')
-        result['trace']['review_output'] = raw_review
-        round_log = dict(candidate_ids={key: alternatives[key][rank] for key in passed}, output=raw_review)
-        result['trace'].setdefault('review_rounds', []).append(round_log)
-        facts = decode(raw_review, list, None)
-        if facts is None or len(facts) != offset or any(type(flag) is not int or flag not in (0, 1) for flag in facts):
-            result['trace']['review_format_error'] = True
-            result['error'] = 'review_format_error'
-            continue
-        round_log['facts'] = {key: facts[span] for key, span in positions.items()}
-        for key, span in positions.items():
-            if all(facts[span]):
-                sentence = passed[key]
-                result['evidence'][key] = dict(document_id=sentence.document_id, page=sentence.page, quote=sentence.quote)
-                result['criterion_status'][key] = 'met'
-                best = max(best, int(key[-2:]))
+        candidate_ids = {key: alternatives[key][rank] for key in passed}
+        facts = review_facts(passed, criteria, target, candidate_ids, generate, deadline, result['trace'])
+        approved = {key: passed[key] for key, flags in facts.items() if all(flags)}
+        review_floor = max([best, *(int(key[-2:]) for key in approved)])
+        # Only C04 and C05 have a separate test-result fact. Other levels' final
+        # facts concern the test environment, qualification, or use duration.
+        result_retry = {
+            key: replace(sentence, quote=sentence.extended_quote, context=sentence.extended_context)
+            for key, flags in facts.items()
+            if int(key[-2:]) in (4, 5) and int(key[-2:]) > review_floor and flags == [1, 1, 0]
+            and (sentence := passed[key]).extended_quote and sentence.quote != sentence.extended_quote
+        }
+        if result_retry:
+            retry_ids = {key: candidate_ids[key] for key in result_retry}
+            recovered = review_facts(result_retry, criteria, target, retry_ids, generate, deadline,
+                                     result['trace'], expanded=True)
+            approved.update({key: result_retry[key] for key, flags in recovered.items() if all(flags)})
+        for key, sentence in approved.items():
+            result['evidence'][key] = dict(document_id=sentence.document_id, page=sentence.page, quote=sentence.quote)
+            result['criterion_status'][key] = 'met'
+            best = max(best, int(key[-2:]))
 
+    if result['trace'].get('review_format_error'):
+        result['error'] = 'review_format_error'
     if best:
         result.update(status='completed', predicted_trl=best)
     result['trace']['pipeline_seconds'] = round(time.monotonic() - start, 3)

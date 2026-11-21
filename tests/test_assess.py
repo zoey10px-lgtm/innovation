@@ -76,14 +76,43 @@ class AssessmentTest(unittest.TestCase):
         self.assertEqual(result['evidence']['APCTT-C04']['quote'], text)
         self.assertEqual(result['evidence']['APCTT-C04']['page'], 5)
 
-    def test_concepts_do_not_need_completed_work(self):
-        def verify(_):
-            self.fail('C02 must not require proof of completed work')
+    def test_concepts_require_a_concrete_mechanism_without_completed_work(self):
+        def verify(pairs):
+            self.assertIn('Pump X would function in a specific application', pairs[0][1])
+            return [score(.60)]
 
         result, _ = self.run_case([page('Pump X is designed to deliver lunar oxygen through a five kilometer pipeline.')],
                                   {'APCTT-C02': 'A specific design concept.'}, lambda *_: [(0, .9)],
                                   ['{"APCTT-C02":"1"}', '[1,1,1]'], verify)
         self.assertEqual(result['predicted_trl'], 2)
+
+    def test_vague_concept_does_not_reach_reviewer(self):
+        text = 'The proposed project is to research and design a future pump.'
+        result, calls = self.run_case([page(text)], {'APCTT-C02': 'A specific design concept.'},
+                                      lambda *_: [(0, .9)], ['{"APCTT-C02":"1"}'], lambda pairs: [score(.22)])
+        self.assertIsNone(result['predicted_trl'])
+        self.assertEqual(len(calls), 1)
+
+    def test_review_retries_only_missing_result_and_cites_both_sentences(self):
+        text = ('Pump X was tested at an accredited laboratory last May.\r\n'
+                'The measured flow was 50 liters per minute during that trial.')
+        result, calls = self.run_case([page(text, 10)], {'APCTT-C04': 'Laboratory tests.'},
+                                      lambda *_: [(0, .9)], ['{"APCTT-C04":"1"}', '[1,1,0]', '[1,1,1]'],
+                                      lambda pairs: [score(.95)])
+        self.assertEqual(result['predicted_trl'], 4)
+        self.assertIn(text, calls[2]['candidates']['APCTT-C04']['excerpt'])
+        self.assertEqual(result['evidence']['APCTT-C04']['quote'], text)
+        self.assertEqual(len(result['trace']['nli']['APCTT-C04']), 1)
+        self.assertEqual(result['trace']['review_rounds'][1]['retry'], 'next_sentence_for_result')
+
+    def test_missing_environment_does_not_trigger_result_retry(self):
+        text = ('Pump X was tested on a bench during the prototype trial. '
+                'The measured flow was 50 liters per minute during that trial.')
+        result, calls = self.run_case([page(text)], {'APCTT-C07': 'Operational demonstration.'},
+                                      lambda *_: [(0, .9)], ['{"APCTT-C07":"1"}', '[1,1,0]'],
+                                      lambda pairs: [score(.95)])
+        self.assertIsNone(result['predicted_trl'])
+        self.assertEqual(len(calls), 2)
 
     def test_c09_checks_successful_operation_period(self):
         def verify(pairs):
@@ -177,7 +206,8 @@ class AssessmentTest(unittest.TestCase):
         criteria = {'APCTT-C02': 'A concrete concept.', 'APCTT-C09': 'Successful operation.'}
         result, _ = self.run_case(pages, criteria, lambda *_: [(0, 1), (1, .8)],
                                   ['{"APCTT-C09":"1"}', '[1,1,1]', '[1,1,1]'],
-                                  lambda pairs: [score(.99 if 'two years' in quote else .1) for quote, _ in pairs])
+                                  lambda pairs: [score(.99 if 'two years' in quote or 'specific application' in claim else .1)
+                                                 for quote, claim in pairs])
         self.assertEqual(result['predicted_trl'], 9)
         self.assertEqual(result['evidence']['APCTT-C09']['page'], 2)
 
