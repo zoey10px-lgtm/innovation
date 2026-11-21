@@ -158,6 +158,16 @@ def decode(raw, shape, default):
     return value if isinstance(value, shape) else default
 
 
+C04_ARTICLE_CLAIM = 'An identified prototype, component or breadboard was built and its function was tested.'
+
+
+def check_c04_article(sentence, verify, trace, *, expanded=False):
+    score, = verify([(sentence.quote, C04_ARTICLE_CLAIM)])
+    trace.append(dict(check='test_article', entailment=score.entailment,
+                      contradiction=score.contradiction, span='center_and_next' if expanded else 'center'))
+    return score.entailment >= 0.75 and score.contradiction <= 0.10
+
+
 def check_nli(candidates, target, verify, trace, *, expanded=False):
     pairs = []
     for key, sentence in candidates.items():
@@ -185,8 +195,11 @@ def check_nli(candidates, target, verify, trace, *, expanded=False):
             span='center_and_next' if expanded else 'center'))
         level = int(key[-2:])
         minimum = 0.55 if level == 2 else 0.85 if level >= 8 else 0.75
-        if score.entailment >= minimum and score.contradiction <= 0.10:
-            passed[key] = sentence
+        if not (score.entailment >= minimum and score.contradiction <= 0.10):
+            continue
+        if level == 4 and not check_c04_article(sentence, verify, trace[key], expanded=expanded):
+            continue
+        passed[key] = sentence
     return passed
 
 
@@ -307,6 +320,11 @@ def assess(target, pages, criteria, retrieve, generate, verify, deadline):
             for key, flags in facts.items()
             if int(key[-2:]) in (4, 5) and int(key[-2:]) > review_floor and flags == [1, 1, 0]
             and (sentence := passed[key]).extended_quote and sentence.quote != sentence.extended_quote
+        }
+        result_retry = {
+            key: sentence for key, sentence in result_retry.items()
+            if int(key[-2:]) != 4 or check_c04_article(
+                sentence, verify, result['trace']['nli'][key], expanded=True)
         }
         if result_retry:
             retry_ids = {key: candidate_ids[key] for key in result_retry}

@@ -63,7 +63,7 @@ class AssessmentTest(unittest.TestCase):
         text = ('A pump test was scheduled for last May.\r\n'
                 'The laboratory measured a repeatable pump flow under operating load.')
         batches = []
-        scores = iter([.2, .93])
+        scores = iter([.2, .93, .90])
 
         def verify(pairs):
             batches.append(pairs[0][0])
@@ -71,10 +71,25 @@ class AssessmentTest(unittest.TestCase):
 
         result, calls = self.run_case([page(text, 5)], {'APCTT-C04': 'Laboratory tests.'},
                                       lambda *_: [(0, .9)], ['{"APCTT-C04":"1"}', '[1,1,1]'], verify)
-        self.assertEqual(batches, ['A pump test was scheduled for last May.', text])
+        self.assertEqual(batches, ['A pump test was scheduled for last May.', text, text])
         self.assertIn(text, calls[1]['candidates']['APCTT-C04']['excerpt'])
         self.assertEqual(result['evidence']['APCTT-C04']['quote'], text)
         self.assertEqual(result['evidence']['APCTT-C04']['page'], 5)
+
+    def test_c04_rejects_phenomenon_without_a_tested_article(self):
+        key = 'APCTT-C04'
+        text = ('The laboratory measured a force on individual particles. '
+                'The particles moved away from the illuminated array.')
+
+        def verify(pairs):
+            return [score(.10 if 'breadboard was built' in claim else .95) for _, claim in pairs]
+
+        result, calls = self.run_case([page(text)], {key: 'Laboratory validation.'}, lambda *_: [(0, .9)],
+                                      ['{"APCTT-C04":"1"}'], verify)
+        self.assertEqual(result['status'], 'abstained')
+        self.assertEqual(len(calls), 1)
+        checks = [entry for entry in result['trace']['nli'][key] if entry.get('check') == 'test_article']
+        self.assertEqual([entry['span'] for entry in checks], ['center', 'center_and_next'])
 
     def test_concepts_require_a_concrete_mechanism_without_completed_work(self):
         def verify(pairs):
@@ -102,7 +117,9 @@ class AssessmentTest(unittest.TestCase):
         self.assertEqual(result['predicted_trl'], 4)
         self.assertIn(text, calls[2]['candidates']['APCTT-C04']['excerpt'])
         self.assertEqual(result['evidence']['APCTT-C04']['quote'], text)
-        self.assertEqual(len(result['trace']['nli']['APCTT-C04']), 1)
+        article_checks = [entry for entry in result['trace']['nli']['APCTT-C04']
+                          if entry.get('check') == 'test_article']
+        self.assertEqual([entry['span'] for entry in article_checks], ['center', 'center_and_next'])
         self.assertEqual(result['trace']['review_rounds'][1]['retry'], 'next_sentence_for_result')
 
     def test_missing_environment_does_not_trigger_result_retry(self):
