@@ -56,7 +56,9 @@ REQUIRED_FACTS = {
     2: ('a specific intended application is described', 'the concept explains how it would work'),
     3: ('CENTER reports a concrete result actually obtained by completed analysis or laboratory work',
         'that concrete result demonstrates a critical function of the target'),
-    4: ('the assessed component or low-fidelity breadboard was tested in a laboratory', 'the test result is reported'),
+    4: ('the evidence identifies an assessed component or low-fidelity breadboard and reports laboratory validation '
+        'of that article’s function or performance. Observing an underlying physical phenomenon by itself does not '
+        'validate the assessed article', 'the test result is reported'),
     5: ('the component or breadboard was tested in an environment representative of intended use', 'the test result is reported'),
     6: ('a representative prototype of the assessed system or subsystem was demonstrated',
         'the completed demonstration took place in an environment relevant to intended use'),
