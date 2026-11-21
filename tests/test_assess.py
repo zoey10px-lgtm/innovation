@@ -87,13 +87,29 @@ class AssessmentTest(unittest.TestCase):
 
     def test_c09_checks_successful_operation_period(self):
         def verify(pairs):
-            self.assertIn('used successfully for a stated period', pairs[0][1])
+            self.assertIn('Pump X', pairs[0][1])
+            self.assertIn('actual mission or operational environment for a stated period', pairs[0][1])
             return [score(.985)]
 
         result, _ = self.run_case([page('Pump X operated successfully in service for almost two years.')],
                                   {'APCTT-C09': 'Proven successful deployment over a stated period.'}, lambda *_: [(0, .9)],
                                   ['{"APCTT-C09":"1"}', '[1,1,1]'], verify)
         self.assertEqual(result['predicted_trl'], 9)
+
+    def test_c03_carries_planning_context_into_result_verification(self):
+        before = 'The final report will be submitted after the upcoming experimental phase.'
+        center = 'The final report contains data and analysis for the coating design.'
+        quotes = []
+
+        def verify(pairs):
+            quotes.extend(premise for premise, _ in pairs)
+            self.assertTrue(all('critical function of Pump X with a concrete result' in claim for _, claim in pairs))
+            return [score(.08) for _ in pairs]
+
+        result, _ = self.run_case([page(f'{before} {center}')], {'APCTT-C03': 'Proof of concept.'},
+                                  lambda *_: [(1, .9)], ['{"APCTT-C03":"2"}'], verify)
+        self.assertIn(f'{before}\n{center}', quotes)
+        self.assertEqual(result['status'], 'abstained')
 
     def test_wrong_length_prose_and_boolean_reviews_are_format_errors(self):
         for malformed in ('C04 should be rejected', '[1,0]', '[true,1,1]'):

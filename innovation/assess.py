@@ -13,6 +13,7 @@ class Sentence:
     document_id: str = "report"
     extended_quote: str = ""
     extended_context: str = ""
+    preceding_context: str = ""
 
 
 class FactReviewRequest(dict):
@@ -53,15 +54,16 @@ REVIEW = (
 REQUIRED_FACTS = {
     1: ('principles stated and supported by observations, studies, or literature',),
     2: ('a specific intended application is described', 'the concept explains how it would work'),
-    3: ('analytical or laboratory results were obtained', 'the results demonstrate a critical function of the target'),
+    3: ('CENTER reports a concrete result actually obtained by completed analysis or laboratory work',
+        'that concrete result demonstrates a critical function of the target'),
     4: ('the assessed component or low-fidelity breadboard was tested in a laboratory', 'the test result is reported'),
     5: ('the component or breadboard was tested in an environment representative of intended use', 'the test result is reported'),
     6: ('a representative prototype of the assessed system or subsystem was demonstrated',
         'the completed demonstration took place in an environment relevant to intended use'),
     7: ('a near-final prototype was demonstrated', 'the demonstration took place in the actual operational environment'),
     8: ('the final system was completed', 'the final system was qualified by completed tests against its requirements for the stated scope'),
-    9: ('the final technology actually operated successfully in its deployed or operational setting',
-        'a duration or period of that successful operation is reported'),
+    9: ('the assessed final technology itself operated successfully in its actual mission or operational environment',
+        'a duration of successful operation is stated for that same technology; a lifetime test duration does not qualify'),
 }
 
 RETRIEVAL_CUES = {
@@ -122,7 +124,7 @@ def sentence_windows(pages):
                 later = sentences[index + 2][:300] if index + 2 < len(sentences) else ''
                 extended_context = f'BEFORE: {before}\nCENTER: {extended_quote}\nAFTER: {later}'
             yield Sentence(page.number, quote, f'BEFORE: {before}\nCENTER: {quote}\nAFTER: {after}',
-                           getattr(page, 'document_id', 'report'), extended_quote, extended_context)
+                           getattr(page, 'document_id', 'report'), extended_quote, extended_context, before)
 
 
 def shortlist(sentences, rankings, page_limit=5, sentence_limit=24):
@@ -155,12 +157,20 @@ def decode(raw, shape, default):
 
 
 def check_work_performed(candidates, target, verify, trace, *, expanded=False):
-    claims = {
-        key: ('The assessed technology was actually used successfully for a stated period.' if key.endswith('09')
-              else f'The reported activity for {target} was actually performed, with a result or evidence of execution.')
-        for key in candidates
-    }
-    pairs = [(sentence.quote, claims[key]) for key, sentence in candidates.items()]
+    pairs = []
+    for key, sentence in candidates.items():
+        level = int(key[-2:])
+        premise = sentence.quote
+        if level == 3:
+            # Prior text can distinguish a promised report from a completed result.
+            premise = '\n'.join(filter(None, (sentence.preceding_context, sentence.quote)))
+            claim = f'The reported analysis or experiment verifies a critical function of {target} with a concrete result.'
+        elif level == 9:
+            claim = (f'The assessed technology, {target}, operated successfully in its actual mission '
+                     'or operational environment for a stated period.')
+        else:
+            claim = f'The reported activity for {target} was actually performed, with a result or evidence of execution.'
+        pairs.append((premise, claim))
     scores = verify(pairs)
     if len(scores) != len(pairs):
         raise ValueError('Unexpected NLI result count')
