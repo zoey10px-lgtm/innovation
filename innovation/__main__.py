@@ -12,7 +12,7 @@ os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
 from .assess import FactReviewRequest, assess
-from .pdf_parser import read_pdf
+from .pdf_parser import Page, read_pdf
 
 
 def fact_token_constraint(tokenizer, count, prompt_length, eos_token_id):
@@ -117,7 +117,11 @@ def run(args):
                 {f'APCTT-C{level:02d}' for level in range(1, 10)}}
     if len(criteria) != 9 or not all(criteria.values()):
         raise ValueError('Expected APCTT criteria C01 through C09.')
-    pages = read_pdf(args.pdf, 'report', remaining_ms=lambda: max(0, int((deadline - time.monotonic()) * 1000)))
+    if args.pages_json:
+        page_data = json.loads(Path(args.pages_json).read_text(encoding='utf-8'))
+        pages = [Page('report', row['page'], row['text']) for row in page_data]
+    else:
+        pages = read_pdf(args.pdf, 'report', remaining_ms=lambda: max(0, int((deadline - time.monotonic()) * 1000)))
     models = Models(args)
 
     def check(pairs):
@@ -135,7 +139,10 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('pdf', 'target', 'encoder', 'reranker', 'qwen', 'nli'):
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--pdf')
+    source.add_argument('--pages-json', help='Pre-extracted pages for model-only evaluation')
+    for name in ('target', 'encoder', 'reranker', 'qwen', 'nli'):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--checklist', default='checklist.json')
     parser.add_argument('--qwen-device', choices=('cpu', 'cuda'), default='cuda')

@@ -19,7 +19,7 @@ class KitAdapterTest(unittest.TestCase):
             'APCTT-C04': dict(document_id='doc-2', page=7, quote='Pump X was tested.')})
         with patch.dict('os.environ', {'APCTT_MODEL_STORE': '/offline/models'}):
             obj.load({'checklist': checklist, 'compute': {'device': 'cpu'}}, Path('assets'))
-        with patch('innovation.adapter.read_pdf', return_value=[]), patch(
+        with patch.dict('sys.modules', torch=SimpleNamespace(set_num_threads=lambda _: None)), patch('innovation.adapter.read_pdf', return_value=[]), patch(
                 'innovation.adapter.assess', return_value=mock):
             result = obj.assess(case, context)
         self.assertEqual(result['predicted_trl'], 4)

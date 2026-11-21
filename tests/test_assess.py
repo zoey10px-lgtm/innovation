@@ -236,6 +236,15 @@ class AssessmentTest(unittest.TestCase):
         self.assertEqual(result['trace']['proposed_evidence'], {})
         self.assertEqual(result['trace']['validation_candidates'], {'APCTT-C04': ['1']})
 
+    def test_long_pdf_block_keeps_verbatim_evidence(self):
+        block = 'instrument data ' * 140 + 'pump results reported from the chamber'
+        windows = list(sentence_windows([page(block)]))
+        self.assertGreater(len(windows), 1)
+        self.assertIn('pump results reported', windows[-1].quote)
+        for window in windows:
+            self.assertIn(window.quote, block)
+            self.assertLessEqual(len(window.quote), 1200)
+
     def test_page_budget(self):
         pages = [page('Pump X was tested in a laboratory and delivered 50 liters per minute.', i)
                  for i in range(1, 10)]

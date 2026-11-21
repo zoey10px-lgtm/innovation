@@ -45,3 +45,16 @@ CUDA runs record PyTorch peak allocated and reserved memory. Validate the full t
 The 11-PDF CPU diagnostic is in [benchmarks/results](benchmarks/results). It matched 2 of 11 provisional references, abstained on 6, and timed out on 3. NEXT-C and Astro-E2 were rerun after the fenced JSON fix. The larger target retrieval models were also tested on NEXT-C for C08, and the provisional evidence page 12 appeared in the top five. The 11-PDF table predates the later PDF bullet-boundary change.
 
 The complete NEXT-C CPU run with the larger retrieval models and Qwen3-1.7B hit the 180-second deadline. See the corresponding result JSON.
+
+## Evaluation commands
+
+Run `python -m benchmarks.reviewed_engine DATA.zip MODEL_STORE results.jsonl`
+to evaluate the configured checkpoints against reviewed targets using pre-extracted
+pages. Errors, timeouts and abstentions count as misses. The runner refuses
+to overwrite an existing output. PDF parsing and kit integration require
+separate end-to-end testing.
+
+For document-classification baselines install NumPy and scikit-learn, then run
+`python benchmarks/generalization.py EXTRACTED_DATA predictions.json`.
+For the experimental CPU passage heuristic use
+`python -m benchmarks.reviewed_passages EXTRACTED_DATA passages.json`.

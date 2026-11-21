@@ -94,24 +94,43 @@ def lexical_candidates(target_words, sentences, level, limit=2):
     """Give explicit evidence language a route independent of semantic ranking."""
     patterns = RETRIEVAL_CUES[level]
     ranked = []
+    # A reported level locates candidate evidence. NLI and factual review still
+    # decide whether the cited activity supports that level for this target.
+    level_hint = re.compile(rf'\b(?:trl|technology\s+readiness\s+level)\s*[-:(=]?\s*{level}\b')
+    hinted = []
     for index, sentence in enumerate(sentences):
         quote = sentence.quote.casefold()
         count = sum(bool(re.search(pattern, quote)) for pattern in patterns)
-        if not count:
-            continue
         overlap = len(target_words.intersection(TOKEN.findall(sentence.context.casefold())))
         completed = bool(COMPLETED.search(quote))
         time_signal = int(completed) - int(bool(PLANNED.search(quote)) and not completed) if level >= 3 else 0
         outcome = int(bool(OUTCOME.search(quote))) if level >= 3 else 0
-        ranked.append(((count, time_signal, outcome, overlap), index))
+        if level_hint.search(quote) and not (PLANNED.search(quote) and not completed):
+            hinted.append(((overlap, outcome, count), index))
+        if count:
+            ranked.append(((count, time_signal, outcome, overlap), index))
     ranked.sort(key=lambda row: row[0], reverse=True)
-    return [index for _, index in ranked[:limit]]
+    hinted.sort(key=lambda row: row[0], reverse=True)
+    primary = [index for _, index in ranked[:1]]
+    return list(dict.fromkeys(primary + [i for _, i in hinted[:1]] +
+                              [i for _, i in ranked[:limit]]))[:limit]
+
+
+def split_long_passage(text, limit=1200):
+    """Retain oversized PDF blocks as verbatim, word-aligned passages."""
+    while len(text) > limit:
+        breaks = list(re.finditer(r'\s+', text[limit // 2:limit]))
+        cut = limit // 2 + breaks[-1].start() if breaks else limit
+        yield text[:cut].rstrip()
+        text = text[cut:].lstrip()
+    if text:
+        yield text
 
 
 def sentence_windows(pages):
     for page in pages:
         sentences = [s.strip() for block in BULLET_BREAK.split(page.text)
-                     for s in BREAK.split(block) if s.strip()]
+                     for raw in BREAK.split(block) for s in split_long_passage(raw.strip()) if s.strip()]
         offsets = []
         end = 0
         for quote in sentences:
